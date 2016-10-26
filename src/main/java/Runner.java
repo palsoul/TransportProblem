@@ -6,19 +6,19 @@ import java.io.FileNotFoundException;
  */
 public class Runner {
     public static void main(String[] args) {
-        int[] resources, consumers;
+        int[] resources, demand;
         int[][] tariffMatrix;
         try {
             resources = buildData(FileWorker.read("resources.txt"));
-            consumers = buildData(FileWorker.read("consumers.txt"));
-            tariffMatrix = buildTariffMatrix(FileWorker.read("tariffs.txt"), resources.length, consumers.length);
+            demand = buildData(FileWorker.read("demand.txt"));
+            tariffMatrix = buildTariffMatrix(FileWorker.read("tariffs.txt"));
         } catch (FileNotFoundException e) {
             resources = new int[0];
-            consumers = new int[0];
+            demand = new int[0];
             tariffMatrix = new int[0][0];
             e.printStackTrace();
         }
-        buildResult(resources, consumers, tariffMatrix);
+        buildResult(resources, demand, tariffMatrix);
     }
 
     private static int[] buildData(String line) {
@@ -32,30 +32,21 @@ public class Runner {
     }
 
 
-    private static int[][] buildTariffMatrix(String sMatrix, int height, int weight) {
-        int[][] matrix = new int[height][weight];
+    private static int[][] buildTariffMatrix(String sMatrix) {
         String[] lines = sMatrix.split("\n");
+        int[][] matrix = new int[lines.length][lines[0].split(" ").length];
         for (int i = 0; i < lines.length; i++) {
             if (lines[0].length() > 0) {
                 matrix[i] = buildData(lines[i]);
             }
         }
-        for (int i = 0; i < height; i++) {
-            for (int j = 0; j < weight; j++) {
-                System.out.print(" " + matrix[i][j]);
-            }
-            System.out.println();
-        }
         return matrix;
     }
 
-    private static void buildResult(int[] resources, int[] consumers, int[][] tariffMatrix) {
-        int[][] result = buildPlan(resources, consumers);
-        Potential potential = getPotential(result, tariffMatrix, resources.length, consumers.length);
-        if (potential.mark < 0) {
-            result[potential.x][potential.y] = getMinimumValueFromResult(result, tariffMatrix, resources.length, consumers.length);
-            System.out.println(result[potential.x][potential.y]);
-        }
+    private static void buildResult(int[] resources, int[] demand, int[][] tariffMatrix) {
+        int[][] result = buildPlan(resources, demand);
+        Potential potential = findPotential(result, tariffMatrix);
+        Mark mark = findMinimumMark(result, tariffMatrix, potential);
     }
 
     private static int[][] buildPlan(int[] resources, int[] consumers) {
@@ -94,43 +85,30 @@ public class Runner {
         return min;
     }
 
-    private static Potential getPotential(int[][] result, int[][] tariffMatrix, int height, int weight) {
-        int[] u = new int[height];
-        boolean[] uCheck = new boolean[height];
-        int[] v = new int[weight];
-        boolean[] vCheck = new boolean[weight];
+    private static Potential findPotential(int[][] result, int[][] tariffMatrix) {
+        int height = result.length, width = result[0].length;
+        Potential potential = new Potential(new int[height], new int[width]);
+        boolean[] uCheck = new boolean[height]; // показывает, проинициализирован ли элемент
+        boolean[] vCheck = new boolean[width]; // показывает, проинициализирован ли элемент
 
-        u[0] = 0; uCheck[0] = true;
-        for (int i = 0; i < height; i++) {
-            for (int j = 0; j < weight; j++) {
-                if (result[i][j] > 0) {
-                    if (uCheck[i] && !vCheck[j]) {
-                        System.out.println(tariffMatrix[i][j] - u[i]);
-                        v[j] = tariffMatrix[i][j] - u[i];
-                        vCheck[j] = true;
-                    } else if (vCheck[j] && !uCheck[i]) {
-                        u[i] = tariffMatrix[i][j] - v[j];
-                        uCheck[j] = true;
-                    }
-                }
-            }
-        }
+        potential.u[0] = 0;       int count = 1;      uCheck[0] = true;
 
-        Potential potential = new Potential();
-        for (int i = 0; i < height; i++) {
-            for (int j = 0; j < weight; j++) {
-                if (result[i][j] == 0) {
-                    if (!potential.initialized) {
-                        potential.mark = tariffMatrix[i][j] - (u[i] + v[j]);
-                        potential.x = i;
-                        potential.y = j;
-                        potential.initialized = true;
-                    } else {
-                        int tempMark = tariffMatrix[i][j] - (u[i] + v[j]);
-                        if (tempMark < potential.mark) {
-                            potential.mark = tempMark;
-                            potential.x = i;
-                            potential.y = j;
+        while (count < height + width) {
+            for (int i = 0; i < height; i++) {
+                for (int j = 0; j < width; j++) {
+                    if (result[i][j] > 0) {
+                        if (uCheck[i]) {
+                            if (!vCheck[j]) {
+                                potential.v[j] = tariffMatrix[i][j] - potential.u[i];
+                                vCheck[j] = true;
+                                count++;
+                            }
+                        } else if (vCheck[j]) {
+                            if (!uCheck[j]) {
+                                potential.u[i] = tariffMatrix[i][j] - potential.v[j];
+                                uCheck[i] = true;
+                                count++;
+                            }
                         }
                     }
                 }
@@ -139,23 +117,16 @@ public class Runner {
         return potential;
     }
 
-    private static int getMinimumValueFromResult(int[][] result, int[][] tariffMatrix, int height, int weight) {
-        int[] variants = new int[height];
-        for (int i = 0; i < height; i++) {
-            int k = 0;
-            for (int j = 0; j < weight; j++) {
-                if (result[i][j] > 0) {
-                    k = j;
-                    break;
+    private static Mark findMinimumMark(int[][] result, int[][] tariffMatrix, Potential potential) {
+        Mark minMark = new Mark(0, 0, 0);
+        for (int i = 0; i < result.length; i++) {
+            for (int j = 0; j < result[0].length; j++) {
+                if (result[i][j] == 0) {
+                    Mark mark = new Mark(i, j, tariffMatrix[i][j] - (potential.u[i] + potential.v[j]));
+                    if (mark.isLessThan(minMark)) minMark = mark;
                 }
             }
-            for (int j = 0; j < weight; j++) {
-                if (result[i][j] > 0 && tariffMatrix[i][j] > tariffMatrix[i][k]) {
-                    k = j;
-                }
-            }
-            variants[i] = result[i][k];
         }
-        return getMinimum(variants);
+        return minMark;
     }
 }
